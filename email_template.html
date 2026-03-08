@@ -2,83 +2,143 @@
 <html>
 <head>
 <meta charset="UTF-8">
+<title>Privalgo Market Update</title>
+<style>
+body {
+    font-family: Arial, Helvetica, sans-serif;
+    background:#222;
+    color:#eee;
+    margin:0;
+    padding:0;
+}
+
+.container{
+    max-width:700px;
+    margin:auto;
+    padding:30px;
+}
+
+.logo{
+    background:#5c657a;
+    padding:20px;
+}
+
+h1{
+    font-size:26px;
+}
+
+h2{
+    margin-top:30px;
+    border-top:1px solid #555;
+    padding-top:20px;
+}
+
+.section{
+    margin-top:20px;
+}
+
+.fx{
+    font-size:18px;
+    line-height:1.6;
+}
+
+.divider{
+    border-top:1px solid #555;
+    margin:30px 0;
+}
+</style>
 </head>
 
-<body style="font-family: Arial, Helvetica, sans-serif; background:#f4f6f8; padding:40px;">
+<body>
 
-<table width="680" align="center" style="background:white;border-radius:10px;overflow:hidden">
+<div class="logo">
+<img src="logo.png" height="40">
+</div>
 
-<tr>
-<td style="background:#0f172a;padding:30px">
+<div class="container">
 
-<img src="https://raw.githubusercontent.com/Privalgo-FD/Market-Update/main/logo.png" height="40">
+<h1>Privalgo Daily Market Update – {{DATE}}</h1>
 
-</td>
-</tr>
+<h2>FX Snapshot</h2>
 
-<tr>
-<td style="padding:30px">
+<div class="fx">
+EUR/USD: <b>{{EURUSD}}</b><br>
+EUR/GBP: <b>{{EURGBP}}</b><br>
+EUR/CAD: <b>{{EURCAD}}</b><br>
+EUR/CHF: <b>{{EURCHF}}</b><br>
+EUR/NOK: <b>{{EURNOK}}</b><br>
+EUR/SEK: <b>{{EURSEK}}</b>
+</div>
 
-<h2>Privalgo Daily Market Update – {{DATE}}</h2>
+<div class="divider"></div>
 
-<h3>FX Snapshot</h3>
+<h2>English</h2>
 
-<p>
-EUR/USD: <strong>{{EURUSD}}</strong><br>
-EUR/GBP: <strong>{{EURGBP}}</strong><br>
-EUR/CAD: <strong>{{EURCAD}}</strong>
-</p>
+<div class="section">
+<b>Key Market Developments</b><br>
+{{EN_KEY_MARKET}}
+</div>
 
-<hr>
+<div class="section">
+<b>FX Markets</b><br>
+{{EN_FX}}
+</div>
 
-<h3>🇬🇧 English</h3>
+<div class="section">
+<b>Central Banks</b><br>
+{{EN_CB}}
+</div>
 
-<b>Key Market Developments</b>
-<p>{{EN_KEY_MARKET}}</p>
+<div class="section">
+<b>Economic Data</b><br>
+{{EN_DATA}}
+</div>
 
-<b>FX Markets</b>
-<p>{{EN_FX}}</p>
+<div class="section">
+<b>Implications for Business</b><br>
+{{EN_IMPACT}}
+</div>
 
-<b>Central Banks</b>
-<p>{{EN_CB}}</p>
+<div class="section">
+<b>Client Talking Point</b><br>
+{{EN_TALKING_POINT}}
+</div>
 
-<b>Economic Data</b>
-<p>{{EN_DATA}}</p>
+<div class="divider"></div>
 
-<b>Implications for Business</b>
-<p>{{EN_IMPACT}}</p>
+<h2>Nederlands</h2>
 
-<hr>
+<div class="section">
+<b>Belangrijkste Marktontwikkelingen</b><br>
+{{NL_KEY_MARKET}}
+</div>
 
-<h3>🇳🇱 Nederlands</h3>
+<div class="section">
+<b>FX Markten</b><br>
+{{NL_FX}}
+</div>
 
-<b>Belangrijkste Marktontwikkelingen</b>
-<p>{{NL_KEY_MARKET}}</p>
+<div class="section">
+<b>Centrale Banken</b><br>
+{{NL_CB}}
+</div>
 
-<b>Valutamarkten</b>
-<p>{{NL_FX}}</p>
+<div class="section">
+<b>Economische Data</b><br>
+{{NL_DATA}}
+</div>
 
-<b>Centrale Banken</b>
-<p>{{NL_CB}}</p>
+<div class="section">
+<b>Impact voor Bedrijven</b><br>
+{{NL_IMPACT}}
+</div>
 
-<b>Economische Data</b>
-<p>{{NL_DATA}}</p>
+<div class="section">
+<b>Gesprekspunt met Klanten</b><br>
+{{NL_TALKING_POINT}}
+</div>
 
-<b>Implicaties voor Bedrijven</b>
-<p>{{NL_IMPACT}}</p>
-
-</td>
-</tr>
-
-<tr>
-<td style="padding:20px;background:#f8fafc;font-size:12px;color:#6b7280">
-
-Internal briefing prepared for the Privalgo team.
-
-</td>
-</tr>
-
-</table>
+</div>
 
 </body>
 </html>
