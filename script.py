@@ -114,19 +114,18 @@ def generate_market_update(headlines, fx_rates):
     prompt = build_market_prompt(headlines, fx_rates)
 
     response = client.chat.completions.create(
-        model="gpt-5",
-        messages=[
-            {
-                "role": "system",
-                "content": "You produce precise internal market briefings in strict JSON."
-            },
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
-        temperature=0.3
-    )
+    model="gpt-5",
+    messages=[
+        {
+            "role": "system",
+            "content": "You produce precise internal market briefings in strict JSON."
+        },
+        {
+            "role": "user",
+            "content": prompt
+        }
+    ]
+)
 
     content = response.choices[0].message.content
     return json.loads(content)
