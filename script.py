@@ -56,12 +56,12 @@ def fetch_fx_rates():
     response.raise_for_status()
     data = response.json()
     rates = data.get("rates", {})
-    return {
-        "EURUSD": f"{rates.get('USD', 'n/a')}",
-        "EURGBP": f"{rates.get('GBP', 'n/a')}",
-        "EURCAD": f"{rates.get('CAD', 'n/a')}",
-    }
 
+    return {
+        "EURUSD": round(rates.get("USD", 0), 4),
+        "EURGBP": round(rates.get("GBP", 0), 4),
+        "EURCAD": round(rates.get("CAD", 0), 4),
+    }
 
 def build_market_prompt(headlines, fx_rates):
     headlines_text = "\n".join(
