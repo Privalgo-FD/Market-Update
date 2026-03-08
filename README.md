@@ -1,1 +1,5 @@
 # Market-Update
+openai>=1.30.0
+requests>=2.31.0
+feedparser>=6.0.10
+beautifulsoup4>=4.12.3
