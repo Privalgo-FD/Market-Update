@@ -26,7 +26,7 @@ RSS_FEEDS = [
     "https://www.federalreserve.gov/feeds/press_monetary.xml",
 ]
 
-FX_API_URL = "https://api.frankfurter.app/latest?from=EUR&to=USD,GBP,CAD"
+FX_API_URL = "https://api.exchangerate.host/latest?base=EUR&symbols=USD,GBP,CAD"
 
 SMTP_SERVER = os.environ["SMTP_SERVER"]
 SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
