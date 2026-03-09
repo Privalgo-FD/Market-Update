@@ -6,139 +6,176 @@
 <style>
 body {
     font-family: Arial, Helvetica, sans-serif;
-    background:#222;
-    color:#eee;
-    margin:0;
-    padding:0;
+    background: #f4f6f8;
+    margin: 0;
+    padding: 0;
+    color: #1f2937;
 }
-
-.container{
-    max-width:700px;
-    margin:auto;
-    padding:30px;
+.wrapper {
+    width: 100%;
+    background: #f4f6f8;
+    padding: 30px 0;
 }
-
-.logo{
-    background:#5c657a;
-    padding:20px;
+.container {
+    max-width: 760px;
+    margin: 0 auto;
+    background: #ffffff;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.06);
 }
-
-h1{
-    font-size:26px;
+.header {
+    background: #1f2937;
+    padding: 24px 32px;
 }
-
-h2{
-    margin-top:30px;
-    border-top:1px solid #555;
-    padding-top:20px;
+.header img {
+    height: 40px;
+    display: block;
 }
-
-.section{
-    margin-top:20px;
+.content {
+    padding: 30px 32px;
 }
-
-.fx{
-    font-size:18px;
-    line-height:1.6;
+h1 {
+    font-size: 24px;
+    margin: 0 0 24px 0;
+    color: #111827;
 }
-
-.divider{
-    border-top:1px solid #555;
-    margin:30px 0;
+h2 {
+    font-size: 18px;
+    margin: 28px 0 14px 0;
+    color: #111827;
+    border-top: 1px solid #e5e7eb;
+    padding-top: 18px;
+}
+h3 {
+    font-size: 15px;
+    margin: 18px 0 6px 0;
+    color: #111827;
+}
+.section-text {
+    font-size: 14px;
+    line-height: 1.6;
+    color: #374151;
+    margin: 0 0 10px 0;
+}
+.grid {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 12px;
+}
+.grid td {
+    width: 50%;
+    padding: 10px 12px;
+    border: 1px solid #e5e7eb;
+    font-size: 14px;
+    color: #374151;
+}
+.grid strong {
+    color: #111827;
+}
+.note {
+    background: #f8fafc;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-top: 12px;
+}
+.footer {
+    padding: 18px 32px 28px 32px;
+    font-size: 12px;
+    color: #6b7280;
+    background: #ffffff;
 }
 </style>
 </head>
-
 <body>
+<div class="wrapper">
+  <div class="container">
+    
+    <div class="header">
+      <img src="https://raw.githubusercontent.com/Privalgo-FD/Market-Update/main/logo.png" alt="Privalgo logo">
+    </div>
 
-<div class="logo">
-<img src="logo.png" height="40">
+    <div class="content">
+      <h1>Privalgo Daily Market Update – {{DATE}}</h1>
+
+      <h2>Market Snapshot</h2>
+      <table class="grid">
+        <tr>
+          <td><strong>EUR/USD</strong><br>{{EURUSD}}</td>
+          <td><strong>EUR/GBP</strong><br>{{EURGBP}}</td>
+        </tr>
+        <tr>
+          <td><strong>EUR/CAD</strong><br>{{EURCAD}}</td>
+          <td><strong>EUR/CHF</strong><br>{{EURCHF}}</td>
+        </tr>
+        <tr>
+          <td><strong>EUR/NOK</strong><br>{{EURNOK}}</td>
+          <td><strong>EUR/SEK</strong><br>{{EURSEK}}</td>
+        </tr>
+        <tr>
+          <td><strong>S&P 500 proxy</strong><br>{{SP500}}</td>
+          <td><strong>Gold proxy</strong><br>{{GOLD}}</td>
+        </tr>
+        <tr>
+          <td><strong>VIX</strong><br>{{VIX}}</td>
+          <td><strong>US 10Y</strong><br>{{US10Y}}</td>
+        </tr>
+        <tr>
+          <td colspan="2"><strong>Brent</strong><br>{{BRENT}}</td>
+        </tr>
+      </table>
+
+      <h2>🇬🇧 English</h2>
+
+      <h3>Key Market Developments</h3>
+      <p class="section-text">{{EN_KEY_MARKET}}</p>
+
+      <h3>FX Markets</h3>
+      <p class="section-text">{{EN_FX}}</p>
+
+      <h3>Central Banks</h3>
+      <p class="section-text">{{EN_CB}}</p>
+
+      <h3>Macro Watch</h3>
+      <p class="section-text">{{EN_MACRO}}</p>
+
+      <h3>Implications for Business</h3>
+      <p class="section-text">{{EN_IMPACT}}</p>
+
+      <div class="note">
+        <strong>Client Talking Point</strong><br>
+        <span class="section-text">{{EN_TALKING_POINT}}</span>
+      </div>
+
+      <h2>🇳🇱 Nederlands</h2>
+
+      <h3>Belangrijkste Marktontwikkelingen</h3>
+      <p class="section-text">{{NL_KEY_MARKET}}</p>
+
+      <h3>Valutamarkten</h3>
+      <p class="section-text">{{NL_FX}}</p>
+
+      <h3>Centrale Banken</h3>
+      <p class="section-text">{{NL_CB}}</p>
+
+      <h3>Macro Watch</h3>
+      <p class="section-text">{{NL_MACRO}}</p>
+
+      <h3>Implicaties voor Bedrijven</h3>
+      <p class="section-text">{{NL_IMPACT}}</p>
+
+      <div class="note">
+        <strong>Gesprekspunt met Klanten</strong><br>
+        <span class="section-text">{{NL_TALKING_POINT}}</span>
+      </div>
+    </div>
+
+    <div class="footer">
+      Internal briefing prepared for the Privalgo team.
+    </div>
+
+  </div>
 </div>
-
-<div class="container">
-
-<h1>Privalgo Daily Market Update – {{DATE}}</h1>
-
-<h2>FX Snapshot</h2>
-
-<div class="fx">
-EUR/USD: <b>{{EURUSD}}</b><br>
-EUR/GBP: <b>{{EURGBP}}</b><br>
-EUR/CAD: <b>{{EURCAD}}</b><br>
-EUR/CHF: <b>{{EURCHF}}</b><br>
-EUR/NOK: <b>{{EURNOK}}</b><br>
-EUR/SEK: <b>{{EURSEK}}</b>
-</div>
-
-<div class="divider"></div>
-
-<h2>English</h2>
-
-<div class="section">
-<b>Key Market Developments</b><br>
-{{EN_KEY_MARKET}}
-</div>
-
-<div class="section">
-<b>FX Markets</b><br>
-{{EN_FX}}
-</div>
-
-<div class="section">
-<b>Central Banks</b><br>
-{{EN_CB}}
-</div>
-
-<div class="section">
-<b>Economic Data</b><br>
-{{EN_DATA}}
-</div>
-
-<div class="section">
-<b>Implications for Business</b><br>
-{{EN_IMPACT}}
-</div>
-
-<div class="section">
-<b>Client Talking Point</b><br>
-{{EN_TALKING_POINT}}
-</div>
-
-<div class="divider"></div>
-
-<h2>Nederlands</h2>
-
-<div class="section">
-<b>Belangrijkste Marktontwikkelingen</b><br>
-{{NL_KEY_MARKET}}
-</div>
-
-<div class="section">
-<b>FX Markten</b><br>
-{{NL_FX}}
-</div>
-
-<div class="section">
-<b>Centrale Banken</b><br>
-{{NL_CB}}
-</div>
-
-<div class="section">
-<b>Economische Data</b><br>
-{{NL_DATA}}
-</div>
-
-<div class="section">
-<b>Impact voor Bedrijven</b><br>
-{{NL_IMPACT}}
-</div>
-
-<div class="section">
-<b>Gesprekspunt met Klanten</b><br>
-{{NL_TALKING_POINT}}
-</div>
-
-</div>
-
 </body>
 </html>
