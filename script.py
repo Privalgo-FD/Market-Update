@@ -43,6 +43,7 @@ def safe_get_json(url: str, params: dict | None = None) -> dict:
     response.raise_for_status()
     return response.json()
 
+import time
 
 def fetch_alpha_vantage_fx() -> dict:
     pairs = {
@@ -54,8 +55,12 @@ def fetch_alpha_vantage_fx() -> dict:
         "EURSEK": ("EUR", "SEK"),
     }
 
-    results = {}
+     results = {}
+
     for label, (from_ccy, to_ccy) in pairs.items():
+
+        time.sleep(1)
+
         data = safe_get_json(
             "https://www.alphavantage.co/query",
             params={
