@@ -45,7 +45,8 @@ def safe_get_json(url: str, params: dict | None = None) -> dict:
 
 import time
 
-def fetch_alpha_vantage_fx() -> dict:
+def fetch_alpha_vantage_fx():
+
     pairs = {
         "EURUSD": ("EUR", "USD"),
         "EURGBP": ("EUR", "GBP"),
@@ -55,11 +56,9 @@ def fetch_alpha_vantage_fx() -> dict:
         "EURSEK": ("EUR", "SEK"),
     }
 
-     results = {}
+    results = {}
 
     for label, (from_ccy, to_ccy) in pairs.items():
-
-        time.sleep(1)
 
         data = safe_get_json(
             "https://www.alphavantage.co/query",
@@ -79,8 +78,9 @@ def fetch_alpha_vantage_fx() -> dict:
 
         results[label] = round(float(rate), 4)
 
-    return results
+        time.sleep(1.1)
 
+    return results
 
 def fetch_alpha_vantage_global_quote(symbol: str) -> dict:
     data = safe_get_json(
