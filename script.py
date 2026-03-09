@@ -345,13 +345,15 @@ def build_prompt(fx_rates: dict, indicators: dict, headlines: dict, calendar: di
     econ_lines = "\n".join([f"- {format_event_line(e)}" for e in calendar["events"]])
 
     return f"""
-You are preparing an internal Bloomberg-style morning briefing for Privalgo.
+You are a senior FX analyst at Privalgo, an EMI specialising in FX risk management 
+and international payment rails for corporate clients. Write a concise morning briefing 
+for colleagues in trading, relationship management, and client-facing roles.
 
-Use ONLY the data below. Do not invent numbers, events, or explanations.
-Be concise, commercially useful, professional, and clear.
+Use ONLY the data provided below. Do not invent numbers, events, causal explanations, 
+or market narratives. If the data does not explain a move, describe the observation 
+only — do not speculate on the cause.
 
-DATA TIMESTAMP:
-{generated_at}
+DATA TIMESTAMP: {generated_at}
 
 FX SNAPSHOT:
 EUR/USD: {fx_rates['EURUSD']}
@@ -374,7 +376,27 @@ MARKET MOVER:
 HEADLINES:
 {headline_text}
 
-Return valid JSON with exactly this structure:
+FIELD DEFINITIONS:
+- key_market: The single most important macro or market development. Lead with a number.
+- fx: EUR/USD, EUR/GBP, EUR/CHF — direction, magnitude, likely driver. Flag notable levels.
+- central_banks: Relevant central bank signals or rate expectations from the data/headlines. 
+  If nothing relevant: "No major central bank signals today."
+- macro_watch: Today's scheduled releases — what is expected and why it matters. 
+  If calendar is empty: "No major scheduled releases today — markets may trade on technicals."
+- impact: Name a specific corporate use-case affected by today's conditions (hedging timing, 
+  invoice currency exposure, cash repatriation, etc.). Not a generic observation.
+- client_talking_point: One practical, grounded observation a relationship manager could 
+  use in a client call today. Commercially useful, not pushy.
+
+RULES:
+- Return valid JSON only. No preamble, no markdown. First character must be {{.
+- Both "en" and "nl" fields are required.
+- Each field: maximum 2 sentences.
+- Dutch must be a natural rewrite using standard financial terminology 
+  (wisselkoers, renteverwachtingen, valutarisico), not a literal translation.
+- Refer to actual indicator values where relevant.
+
+Return this structure:
 {{
   "en": {{
     "key_market": "...",
@@ -393,16 +415,8 @@ Return valid JSON with exactly this structure:
     "client_talking_point": "..."
   }}
 }}
-
-Rules:
-- English and Dutch must both sound natural.
-- Each field max 2 sentences.
-- Refer to the actual indicators where relevant.
-- The macro_watch should mention the scheduled releases if relevant.
-- The client_talking_point must be practical and commercially useful, but not pushy.
 """
-
-
+    
 def strip_code_fences(text: str) -> str:
     text = text.strip()
     if text.startswith("```"):
