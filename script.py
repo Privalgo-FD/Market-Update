@@ -129,9 +129,12 @@ def fetch_fred_latest(series_id: str) -> dict:
     raise ValueError(f"No usable FRED data for {series_id}")
 
 
-def fetch_market_indicators() -> dict:
+def fetch_market_indicators():
     sp500 = fetch_alpha_vantage_global_quote("SPY")
+    time.sleep(1.1)
+
     gold = fetch_alpha_vantage_global_quote("GLD")
+    time.sleep(1.1)
 
     # FRED series:
     # VIXCLS = CBOE VIX close
@@ -148,7 +151,6 @@ def fetch_market_indicators() -> dict:
         "US10Y": us10y,
         "BRENT": brent,
     }
-
 
 def fetch_rss_items(feed_url: str, max_items: int = 4) -> list[dict]:
     feed = feedparser.parse(feed_url)
