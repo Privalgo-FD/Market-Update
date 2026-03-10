@@ -29,9 +29,7 @@ FED_RSS = "https://www.federalreserve.gov/feeds/press_monetary.xml"
 REUTERS_BUSINESS_RSS = "https://feeds.reuters.com/reuters/businessNews"
 REUTERS_WEALTH_RSS = "https://feeds.reuters.com/news/wealth"
 
-BLS_CPI_SCHEDULE = "https://www.bls.gov/schedule/news_release/cpi.htm"
-BLS_PPI_SCHEDULE = "https://www.bls.gov/schedule/news_release/ppi.htm"
-BLS_EMPSIT_SCHEDULE = "https://www.bls.gov/schedule/news_release/empsit.htm"
+BLS_CURRENT_YEAR_SCHEDULE = "https://www.bls.gov/schedule/news_release/current_year.asp"
 
 SMTP_SERVER = os.environ["SMTP_SERVER"]
 SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
@@ -240,19 +238,18 @@ def flatten_headlines(headlines: dict) -> str:
     return "\n".join(lines)
 
 
-def parse_bls_datetime(date_str: str, time_str: str) -> datetime | None:
-    date_str = date_str.strip().replace("Sept.", "Sep.").replace("Sept", "Sep")
-    time_str = time_str.strip()
+def parse_bls_schedule_datetime(date_str: str, time_str: str) -> datetime | None:
+    date_str = date_str.strip()
+    time_str = time_str.strip().upper().replace(".", "")
 
     date_formats = [
-        "%b. %d, %Y",
-        "%B %d, %Y",
         "%A, %B %d, %Y",
-        "%a, %b. %d, %Y",
+        "%a, %B %d, %Y",
+        "%B %d, %Y",
     ]
     time_formats = [
         "%I:%M %p",
-        "%I:%M%p",
+        "%H:%M",
     ]
 
     for df in date_formats:
@@ -265,58 +262,72 @@ def parse_bls_datetime(date_str: str, time_str: str) -> datetime | None:
     return None
 
 
-def fetch_next_bls_release(schedule_url: str, label: str) -> dict:
-    html = safe_get_text(schedule_url)
+def fetch_economic_calendar() -> dict:
+    html = safe_get_text(BLS_CURRENT_YEAR_SCHEDULE)
     soup = BeautifulSoup(html, "html.parser")
     now_et = datetime.now(ET)
 
-    table = soup.find("table")
-    if not table:
-        raise ValueError(f"No schedule table found for {label}")
+    target_labels = {
+        "Consumer Price Index": "US CPI",
+        "Producer Price Index": "US PPI",
+        "Employment Situation": "US Employment Situation (NFP / Unemployment)",
+    }
 
-    rows = table.find_all("tr")
-    candidates = []
+    events = []
+    text = soup.get_text("\n", strip=True)
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
 
-    for row in rows:
-        cells = [c.get_text(" ", strip=True) for c in row.find_all(["td", "th"])]
-        if len(cells) < 3:
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+
+        matched_label = None
+        matched_title = None
+        for title, label in target_labels.items():
+            if line.startswith(title):
+                matched_title = title
+                matched_label = label
+                break
+
+        if matched_label:
+            # Expect next lines to be date and time
+            if i + 2 < len(lines):
+                date_line = lines[i + 1]
+                time_line = lines[i + 2]
+
+                dt = parse_bls_schedule_datetime(date_line, time_line)
+                if dt and dt >= now_et:
+                    # Try to extract reference period from title text
+                    reference_period = ""
+                    m = re.search(r"for (.+)$", matched_title)
+                    if m:
+                        reference_period = m.group(1)
+                    else:
+                        # also try from full line, e.g. "Consumer Price Index for February 2026"
+                        m2 = re.search(r"for (.+)$", line)
+                        if m2:
+                            reference_period = m2.group(1)
+
+                    events.append(
+                        {
+                            "label": matched_label,
+                            "reference_period": reference_period or "upcoming release",
+                            "release_et": dt,
+                        }
+                    )
+            i += 3
             continue
 
-        ref_month = cells[0]
-        release_date = cells[1]
-        release_time = cells[2]
+        i += 1
 
-        if "release date" in release_date.lower():
-            continue
+    if not events:
+        raise ValueError("No upcoming CPI/PPI/Employment Situation releases found on BLS current-year schedule page")
 
-        dt = parse_bls_datetime(release_date, release_time)
-        if dt and dt >= now_et:
-            candidates.append(
-                {
-                    "label": label,
-                    "reference_period": ref_month,
-                    "release_et": dt,
-                }
-            )
-
-    if not candidates:
-        raise ValueError(f"No upcoming BLS release found for {label}")
-
-    return sorted(candidates, key=lambda x: x["release_et"])[0]
-
-
-def fetch_economic_calendar() -> dict:
-    cpi = fetch_next_bls_release(BLS_CPI_SCHEDULE, "US CPI")
-    ppi = fetch_next_bls_release(BLS_PPI_SCHEDULE, "US PPI")
-    jobs = fetch_next_bls_release(BLS_EMPSIT_SCHEDULE, "US Employment Situation (NFP / Unemployment)")
-
-    events = [cpi, ppi, jobs]
     events_sorted = sorted(events, key=lambda x: x["release_et"])
-    market_mover = events_sorted[0]
 
     return {
-        "events": events_sorted,
-        "market_mover": market_mover,
+        "events": events_sorted[:3],
+        "market_mover": events_sorted[0],
     }
 
 
