@@ -52,15 +52,43 @@ def safe_get_json(url: str, params: dict | None = None) -> dict:
     return response.json()
 
 
-def safe_get_ics(url: str) -> str:
+def safe_get_ics(url: str, retries: int = 3, backoff: float = 2.0) -> str:
     headers = {
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "text/calendar,text/plain,*/*",
-        "Cache-Control": "no-cache",
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Referer": "https://www.bls.gov/",
     }
-    response = requests.get(url, headers=headers, timeout=25)
-    response.raise_for_status()
-    return response.text
+
+    session = requests.Session()
+    session.headers.update(headers)
+
+    # Warm up: visit BLS homepage to acquire session cookies before the real request
+    try:
+        session.get("https://www.bls.gov/", timeout=15)
+        time.sleep(1.5)
+    except Exception:
+        pass
+
+    last_exc = None
+    for attempt in range(retries):
+        try:
+            response = session.get(url, timeout=25)
+            response.raise_for_status()
+            return response.text
+        except requests.exceptions.HTTPError as e:
+            last_exc = e
+            if response.status_code == 403:
+                time.sleep(backoff * (attempt + 1))
+            else:
+                raise
+    raise last_exc
 
 
 def fetch_alpha_vantage_fx() -> dict:
