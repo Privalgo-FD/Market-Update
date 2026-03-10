@@ -11,7 +11,6 @@ from email.mime.text import MIMEText
 
 import feedparser
 import requests
-from bs4 import BeautifulSoup
 from openai import OpenAI
 
 
@@ -29,7 +28,7 @@ FED_RSS = "https://www.federalreserve.gov/feeds/press_monetary.xml"
 REUTERS_BUSINESS_RSS = "https://feeds.reuters.com/reuters/businessNews"
 REUTERS_WEALTH_RSS = "https://feeds.reuters.com/news/wealth"
 
-BLS_CURRENT_YEAR_SCHEDULE = "https://www.bls.gov/schedule/news_release/current_year.asp"
+BLS_ICS_URL = "https://www.bls.gov/schedule/news_release/bls.ics"
 
 SMTP_SERVER = os.environ["SMTP_SERVER"]
 SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
@@ -52,17 +51,17 @@ def safe_get_json(url: str, params: dict | None = None) -> dict:
     response.raise_for_status()
     return response.json()
 
-def safe_get_text(url: str) -> str:
+
+def safe_get_ics(url: str) -> str:
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "text/calendar,text/plain,*/*",
         "Cache-Control": "no-cache",
-        "Pragma": "no-cache",
     }
     response = requests.get(url, headers=headers, timeout=25)
     response.raise_for_status()
     return response.text
+
 
 def fetch_alpha_vantage_fx() -> dict:
     pairs = {
@@ -95,6 +94,7 @@ def fetch_alpha_vantage_fx() -> dict:
 
     return results
 
+
 def fetch_alpha_vantage_gold_spot() -> float:
     data = safe_get_json(
         "https://www.alphavantage.co/query",
@@ -105,8 +105,6 @@ def fetch_alpha_vantage_gold_spot() -> float:
         },
     )
 
-    # Alpha Vantage commodity payloads are not as uniform as FX/global quote,
-    # so parse defensively.
     possible_paths = [
         ("data",),
         ("spot_price",),
@@ -128,7 +126,6 @@ def fetch_alpha_vantage_gold_spot() -> float:
         if found:
             try:
                 if isinstance(cur, list) and cur:
-                    # if list of dicts
                     first = cur[0]
                     if isinstance(first, dict):
                         for k in ["value", "price", "spot_price", "close"]:
@@ -138,7 +135,6 @@ def fetch_alpha_vantage_gold_spot() -> float:
             except Exception:
                 pass
 
-    # broader fallback search
     if isinstance(data, dict):
         for k, v in data.items():
             if isinstance(v, (int, float, str)):
@@ -177,12 +173,10 @@ def fetch_fred_latest(series_id: str) -> dict:
 
 
 def fetch_market_indicators() -> dict:
-    # Actual S&P 500 daily close, not SPY proxy
     sp500 = fetch_fred_latest("SP500")
     gold = fetch_alpha_vantage_gold_spot()
     time.sleep(1.1)
 
-    # FRED series
     vix = fetch_fred_latest("VIXCLS")
     us10y = fetch_fred_latest("DGS10")
     brent = fetch_fred_latest("DCOILBRENTEU")
@@ -238,90 +232,72 @@ def flatten_headlines(headlines: dict) -> str:
     return "\n".join(lines)
 
 
-def parse_bls_schedule_datetime(date_str: str, time_str: str) -> datetime | None:
-    date_str = date_str.strip()
-    time_str = time_str.strip().upper().replace(".", "")
+def parse_ics_datetime(dt_raw: str) -> datetime | None:
+    dt_clean = dt_raw.strip().replace("Z", "")
 
-    date_formats = [
-        "%A, %B %d, %Y",
-        "%a, %B %d, %Y",
-        "%B %d, %Y",
-    ]
-    time_formats = [
-        "%I:%M %p",
-        "%H:%M",
-    ]
-
-    for df in date_formats:
-        for tf in time_formats:
-            try:
-                dt = datetime.strptime(f"{date_str} {time_str}", f"{df} {tf}")
-                return dt.replace(tzinfo=ET)
-            except ValueError:
-                continue
+    for fmt in ("%Y%m%dT%H%M%S", "%Y%m%dT%H%M", "%Y%m%d"):
+        try:
+            dt = datetime.strptime(dt_clean, fmt)
+            return dt.replace(tzinfo=ET)
+        except ValueError:
+            continue
     return None
 
 
 def fetch_economic_calendar() -> dict:
-    html = safe_get_text(BLS_CURRENT_YEAR_SCHEDULE)
-    soup = BeautifulSoup(html, "html.parser")
+    ics_text = safe_get_ics(BLS_ICS_URL)
     now_et = datetime.now(ET)
 
-    target_labels = {
+    target_map = {
         "Consumer Price Index": "US CPI",
         "Producer Price Index": "US PPI",
         "Employment Situation": "US Employment Situation (NFP / Unemployment)",
     }
 
     events = []
-    text = soup.get_text("\n", strip=True)
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    blocks = ics_text.split("BEGIN:VEVENT")
 
-    i = 0
-    while i < len(lines):
-        line = lines[i]
+    for block in blocks:
+        if "SUMMARY:" not in block or "DTSTART" not in block:
+            continue
+
+        summary_match = re.search(r"SUMMARY:(.+)", block)
+        dtstart_match = re.search(r"DTSTART(?:;[^:]+)?:([0-9T]+Z?)", block)
+
+        if not summary_match or not dtstart_match:
+            continue
+
+        summary = summary_match.group(1).strip()
+        dt_raw = dtstart_match.group(1).strip()
 
         matched_label = None
-        matched_title = None
-        for title, label in target_labels.items():
-            if line.startswith(title):
-                matched_title = title
+        for title, label in target_map.items():
+            if summary.startswith(title):
                 matched_label = label
                 break
 
-        if matched_label:
-            # Expect next lines to be date and time
-            if i + 2 < len(lines):
-                date_line = lines[i + 1]
-                time_line = lines[i + 2]
-
-                dt = parse_bls_schedule_datetime(date_line, time_line)
-                if dt and dt >= now_et:
-                    # Try to extract reference period from title text
-                    reference_period = ""
-                    m = re.search(r"for (.+)$", matched_title)
-                    if m:
-                        reference_period = m.group(1)
-                    else:
-                        # also try from full line, e.g. "Consumer Price Index for February 2026"
-                        m2 = re.search(r"for (.+)$", line)
-                        if m2:
-                            reference_period = m2.group(1)
-
-                    events.append(
-                        {
-                            "label": matched_label,
-                            "reference_period": reference_period or "upcoming release",
-                            "release_et": dt,
-                        }
-                    )
-            i += 3
+        if not matched_label:
             continue
 
-        i += 1
+        dt = parse_ics_datetime(dt_raw)
+        if not dt or dt < now_et:
+            continue
+
+        reference_period = "upcoming release"
+        m = re.search(r"for (.+)$", summary)
+        if m:
+            reference_period = m.group(1).strip()
+
+        events.append(
+            {
+                "label": matched_label,
+                "reference_period": reference_period,
+                "release_et": dt,
+            }
+        )
 
     if not events:
-        raise ValueError("No upcoming CPI/PPI/Employment Situation releases found on BLS current-year schedule page")
+        raise ValueError("No upcoming CPI/PPI/Employment Situation releases found in BLS ICS feed")
 
     events_sorted = sorted(events, key=lambda x: x["release_et"])
 
@@ -355,7 +331,6 @@ def build_market_mover_text(calendar: dict) -> str:
 
 def build_prompt(fx_rates: dict, indicators: dict, headlines: dict, calendar: dict) -> str:
     headline_text = flatten_headlines(headlines)
-
     generated_at = datetime.now(CET).strftime("%Y-%m-%d %H:%M CET")
     econ_lines = "\n".join([f"- {format_event_line(e)}" for e in calendar["events"]])
 
@@ -431,7 +406,8 @@ Return this structure:
   }}
 }}
 """
-    
+
+
 def strip_code_fences(text: str) -> str:
     text = text.strip()
     if text.startswith("```"):
