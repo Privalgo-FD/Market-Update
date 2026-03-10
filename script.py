@@ -96,56 +96,30 @@ def fetch_alpha_vantage_fx() -> dict:
 
 
 def fetch_alpha_vantage_gold_spot() -> float:
-    data = safe_get_json(
-        "https://www.alphavantage.co/query",
-        params={
-            "function": "GOLD_SILVER_SPOT",
-            "symbol": "GOLD",
-            "apikey": ALPHA_VANTAGE_API_KEY,
-        },
-    )
+    """
+    Fetch gold spot price (XAU/USD) via Alpha Vantage's commodity exchange rate endpoint.
+    Falls back to FRED (LBMA London AM fix, USD/troy oz) if Alpha Vantage fails.
+    """
+    try:
+        data = safe_get_json(
+            "https://www.alphavantage.co/query",
+            params={
+                "function": "COMMODITY_EXCHANGE_RATE",
+                "from_commodity": "XAU",
+                "to_currency": "USD",
+                "apikey": ALPHA_VANTAGE_API_KEY,
+            },
+        )
+        block = data.get("Realtime Commodity Exchange Rate", {})
+        rate = block.get("5. Exchange Rate")
+        if rate:
+            return round(float(rate), 2)
+    except Exception:
+        pass  # fall through to FRED
 
-    possible_paths = [
-        ("data",),
-        ("spot_price",),
-        ("price",),
-        ("value",),
-        ("Gold Spot Price",),
-        ("Realtime Gold Spot Price",),
-    ]
-
-    for path in possible_paths:
-        cur = data
-        found = True
-        for key in path:
-            if isinstance(cur, dict) and key in cur:
-                cur = cur[key]
-            else:
-                found = False
-                break
-        if found:
-            try:
-                if isinstance(cur, list) and cur:
-                    first = cur[0]
-                    if isinstance(first, dict):
-                        for k in ["value", "price", "spot_price", "close"]:
-                            if k in first:
-                                return round(float(first[k]), 2)
-                return round(float(cur), 2)
-            except Exception:
-                pass
-
-    if isinstance(data, dict):
-        for k, v in data.items():
-            if isinstance(v, (int, float, str)):
-                key_lower = str(k).lower()
-                if "gold" in key_lower or "spot" in key_lower or "price" in key_lower or "value" in key_lower:
-                    try:
-                        return round(float(v), 2)
-                    except Exception:
-                        continue
-
-    raise ValueError(f"Missing gold spot price: {data}")
+    # FRED fallback: LBMA Gold Price AM fix (USD per troy oz), updated daily
+    obs = fetch_fred_latest("GOLDAMGBD228NLBM")
+    return round(obs["value"], 2)
 
 
 def fetch_fred_latest(series_id: str) -> dict:
@@ -420,7 +394,7 @@ def generate_market_update(fx_rates: dict, indicators: dict, headlines: dict, ca
     prompt = build_prompt(fx_rates, indicators, headlines, calendar)
 
     response = client.chat.completions.create(
-        model="gpt-5",
+        model="gpt-4o",  # gpt-5 does not exist; use gpt-4o (or gpt-4o-mini for lower cost)
         messages=[
             {
                 "role": "system",
