@@ -95,31 +95,41 @@ def fetch_alpha_vantage_fx() -> dict:
     return results
 
 
-def fetch_alpha_vantage_gold_spot() -> float:
+def fetch_gold_spot() -> float:
     """
-    Fetch gold spot price (XAU/USD) via Alpha Vantage's commodity exchange rate endpoint.
-    Falls back to FRED (LBMA London AM fix, USD/troy oz) if Alpha Vantage fails.
-    """
-    try:
-        data = safe_get_json(
-            "https://www.alphavantage.co/query",
-            params={
-                "function": "COMMODITY_EXCHANGE_RATE",
-                "from_commodity": "XAU",
-                "to_currency": "USD",
-                "apikey": ALPHA_VANTAGE_API_KEY,
-            },
-        )
-        block = data.get("Realtime Commodity Exchange Rate", {})
-        rate = block.get("5. Exchange Rate")
-        if rate:
-            return round(float(rate), 2)
-    except Exception:
-        pass  # fall through to FRED
+    Fetch gold spot price (XAU/USD).
 
-    # FRED fallback: LBMA Gold Price AM fix (USD per troy oz), updated daily
-    obs = fetch_fred_latest("GOLDAMGBD228NLBM")
-    return round(obs["value"], 2)
+    Source priority:
+      1. metals.live free public API (~15 min delayed, no key required)
+      2. Alpha Vantage COMMODITY_EXCHANGE_RATE (XAU -> USD) — fallback
+    """
+    # --- Source 1: metals.live ---
+    try:
+        data = safe_get_json("https://metals.live/api/v1/spot")
+        for item in data:
+            if isinstance(item, dict) and item.get("metal", "").upper() in ("XAU", "GOLD"):
+                price = item.get("price") or item.get("ask")
+                if price:
+                    return round(float(price), 2)
+    except Exception:
+        pass
+
+    # --- Source 2: Alpha Vantage fallback ---
+    data = safe_get_json(
+        "https://www.alphavantage.co/query",
+        params={
+            "function": "COMMODITY_EXCHANGE_RATE",
+            "from_commodity": "XAU",
+            "to_currency": "USD",
+            "apikey": ALPHA_VANTAGE_API_KEY,
+        },
+    )
+    block = data.get("Realtime Commodity Exchange Rate", {})
+    rate = block.get("5. Exchange Rate")
+    if rate:
+        return round(float(rate), 2)
+
+    raise ValueError("Unable to fetch gold spot price from any source")
 
 
 def fetch_fred_latest(series_id: str) -> dict:
@@ -148,7 +158,7 @@ def fetch_fred_latest(series_id: str) -> dict:
 
 def fetch_market_indicators() -> dict:
     sp500 = fetch_fred_latest("SP500")
-    gold = fetch_alpha_vantage_gold_spot()
+    gold = fetch_gold_spot()
     time.sleep(1.1)
 
     vix = fetch_fred_latest("VIXCLS")
