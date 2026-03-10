@@ -54,12 +54,17 @@ def safe_get_json(url: str, params: dict | None = None) -> dict:
     response.raise_for_status()
     return response.json()
 
-
 def safe_get_text(url: str) -> str:
-    response = requests.get(url, timeout=25)
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+    }
+    response = requests.get(url, headers=headers, timeout=25)
     response.raise_for_status()
     return response.text
-
 
 def fetch_alpha_vantage_fx() -> dict:
     pairs = {
@@ -91,7 +96,6 @@ def fetch_alpha_vantage_fx() -> dict:
         time.sleep(1.1)
 
     return results
-
 
 def fetch_alpha_vantage_gold_spot() -> float:
     data = safe_get_json(
