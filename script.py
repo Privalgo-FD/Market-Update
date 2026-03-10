@@ -97,24 +97,24 @@ def fetch_alpha_vantage_fx() -> dict:
 
 def fetch_gold_spot() -> float:
     """
-    Fetch gold spot price (XAU/USD) via Alpha Vantage COMMODITY_EXCHANGE_RATE.
-    ~15 min delayed on the free tier, which is acceptable.
+    Fetch gold spot price via Yahoo Finance GC=F (gold futures, ~15 min delayed).
+    No API key required. Add yfinance to requirements.txt if not already present.
     """
-    data = safe_get_json(
-        "https://www.alphavantage.co/query",
-        params={
-            "function": "CURRENCY_EXCHANGE_RATE",
-            "from_currency": "XAU",
-            "to_currency": "USD",
-            "apikey": ALPHA_VANTAGE_API_KEY,
-        },
-    )
-    block = data.get("Realtime Currency Exchange Rate", {})
-    rate = block.get("5. Exchange Rate")
-    if rate:
-        return round(float(rate), 2)
+    import yfinance as yf
 
-    raise ValueError(f"Unable to fetch gold spot price from Alpha Vantage: {data}")
+    ticker = yf.Ticker("GC=F")
+    info = ticker.fast_info
+    price = getattr(info, "last_price", None) or getattr(info, "regularMarketPrice", None)
+
+    if price:
+        return round(float(price), 2)
+
+    # Fallback: last closing price from recent history
+    hist = ticker.history(period="2d")
+    if not hist.empty:
+        return round(float(hist["Close"].iloc[-1]), 2)
+
+    raise ValueError("Unable to fetch gold spot price from Yahoo Finance (GC=F)")
 
 
 def fetch_fred_latest(series_id: str) -> dict:
