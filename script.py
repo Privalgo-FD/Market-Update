@@ -97,39 +97,24 @@ def fetch_alpha_vantage_fx() -> dict:
 
 def fetch_gold_spot() -> float:
     """
-    Fetch gold spot price (XAU/USD).
-
-    Source priority:
-      1. metals.live free public API (~15 min delayed, no key required)
-      2. Alpha Vantage COMMODITY_EXCHANGE_RATE (XAU -> USD) — fallback
+    Fetch gold spot price (XAU/USD) via Alpha Vantage COMMODITY_EXCHANGE_RATE.
+    ~15 min delayed on the free tier, which is acceptable.
     """
-    # --- Source 1: metals.live ---
-    try:
-        data = safe_get_json("https://metals.live/api/v1/spot")
-        for item in data:
-            if isinstance(item, dict) and item.get("metal", "").upper() in ("XAU", "GOLD"):
-                price = item.get("price") or item.get("ask")
-                if price:
-                    return round(float(price), 2)
-    except Exception:
-        pass
-
-    # --- Source 2: Alpha Vantage fallback ---
     data = safe_get_json(
         "https://www.alphavantage.co/query",
         params={
-            "function": "COMMODITY_EXCHANGE_RATE",
-            "from_commodity": "XAU",
+            "function": "CURRENCY_EXCHANGE_RATE",
+            "from_currency": "XAU",
             "to_currency": "USD",
             "apikey": ALPHA_VANTAGE_API_KEY,
         },
     )
-    block = data.get("Realtime Commodity Exchange Rate", {})
+    block = data.get("Realtime Currency Exchange Rate", {})
     rate = block.get("5. Exchange Rate")
     if rate:
         return round(float(rate), 2)
 
-    raise ValueError("Unable to fetch gold spot price from any source")
+    raise ValueError(f"Unable to fetch gold spot price from Alpha Vantage: {data}")
 
 
 def fetch_fred_latest(series_id: str) -> dict:
