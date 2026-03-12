@@ -12,56 +12,20 @@ The email is generated automatically each morning using GitHub Actions.
 
 What the system produces
 
-The automated email contains:
+The automated email contains: FX Snapshot - EUR/USD - EUR/GBP - EUR/CHF
 
-FX Snapshot
-
-EUR/USD
-
-EUR/GBP
-
-EUR/CHF
-
-Market Indicators
-
-S&P 500
-
-Gold Spot
-
-VIX
-
-US 10Y Treasury Yield
-
-Brent Oil
+Market Indicators: S&P 500 - Gold Spot - VIX - US 10Y Treasury Yield - Brent Oil
 
 Economic Calendar
 
-Upcoming key releases:
-
-US CPI
-
-US PPI
-
-US Employment Situation (Non-Farm Payrolls / Unemployment)
-
-AI Market Briefing
+Upcoming key releases: US CPI - US PPI - US Employment Situation (Non-Farm Payrolls / Unemployment) - AI Market Briefing
 
 A structured bilingual briefing including:
 
-Key Market Development
-
-FX Market Summary
-
-Central Bank Signals
-
-Macro Watch
+Key Market Development - FX Market Summary - Central Bank Signals - Macro Watch
 
 Corporate Impact
 
 Client Talking Point
 
-The briefing is produced in:
-
-English
-
-Dutch
+The briefing is produced in: English & Dutch
