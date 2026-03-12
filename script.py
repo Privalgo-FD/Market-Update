@@ -495,7 +495,7 @@ def send_email(html_body: str) -> None:
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = MAIL_FROM
-    msg["To"] = ", ".join(RECIPIENTS)
+    msg["To"] = MAIL_FROM
     msg["Reply-To"] = "whendriks@privalgo.co.uk"
 
     text_body = "This email contains an HTML market update. Please view it in an HTML-compatible email client."
@@ -506,7 +506,7 @@ def send_email(html_body: str) -> None:
     with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
         server.starttls(context=context)
         server.login(SMTP_USERNAME, SMTP_PASSWORD)
-        server.sendmail(MAIL_FROM, RECIPIENTS, msg.as_string())
+        server.sendmail(MAIL_FROM, [MAIL_FROM] + RECIPIENTS, msg.as_string())
 
 
 def main():
