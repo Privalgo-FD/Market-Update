@@ -11,7 +11,7 @@ from email.mime.text import MIMEText
 
 import feedparser
 import requests
-from openai import OpenAI
+import anthropic
 
 
 RECIPIENTS = [
@@ -36,11 +36,12 @@ SMTP_USERNAME = os.environ["SMTP_USERNAME"]
 SMTP_PASSWORD = os.environ["SMTP_PASSWORD"]
 MAIL_FROM = os.environ["MAIL_FROM"]
 
-OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
+ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 ALPHA_VANTAGE_API_KEY = os.environ["ALPHA_VANTAGE_API_KEY"]
 FRED_API_KEY = os.environ["FRED_API_KEY"]
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+# Anthropic client — replaces OpenAI
+anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
 ET = ZoneInfo("America/New_York")
 CET = ZoneInfo("Europe/Amsterdam")
@@ -69,7 +70,6 @@ def safe_get_ics(url: str, retries: int = 3, backoff: float = 2.0) -> str:
     session = requests.Session()
     session.headers.update(headers)
 
-    # Warm up: visit BLS homepage to acquire session cookies before the real request
     try:
         session.get("https://www.bls.gov/", timeout=15)
         time.sleep(1.5)
@@ -123,26 +123,39 @@ def fetch_alpha_vantage_fx() -> dict:
     return results
 
 
-def fetch_gold_spot() -> float:
+def fetch_yfinance_price(ticker: str) -> float:
     """
-    Fetch gold spot price via Yahoo Finance GC=F (gold futures, ~15 min delayed).
-    No API key required. Add yfinance to requirements.txt if not already present.
+    Generic yfinance price fetch. Works for equities, indices, crypto, futures.
+    Returns the last traded price, falling back to most recent closing price.
     """
     import yfinance as yf
 
-    ticker = yf.Ticker("GC=F")
-    info = ticker.fast_info
+    t = yf.Ticker(ticker)
+    info = t.fast_info
     price = getattr(info, "last_price", None) or getattr(info, "regularMarketPrice", None)
 
     if price:
         return round(float(price), 2)
 
-    # Fallback: last closing price from recent history
-    hist = ticker.history(period="2d")
+    hist = t.history(period="2d")
     if not hist.empty:
         return round(float(hist["Close"].iloc[-1]), 2)
 
-    raise ValueError("Unable to fetch gold spot price from Yahoo Finance (GC=F)")
+    raise ValueError(f"Unable to fetch price for {ticker} from Yahoo Finance")
+
+
+def fetch_gold_spot() -> float:
+    return fetch_yfinance_price("GC=F")
+
+
+def fetch_bitcoin() -> float:
+    """BTC/USD spot price via Yahoo Finance."""
+    return fetch_yfinance_price("BTC-USD")
+
+
+def fetch_nikkei() -> float:
+    """Nikkei 225 index level via Yahoo Finance."""
+    return fetch_yfinance_price("^N225")
 
 
 def fetch_fred_latest(series_id: str) -> dict:
@@ -177,6 +190,11 @@ def fetch_market_indicators() -> dict:
     vix = fetch_fred_latest("VIXCLS")
     us10y = fetch_fred_latest("DGS10")
     brent = fetch_fred_latest("DCOILBRENTEU")
+    time.sleep(1.1)
+
+    bitcoin = fetch_bitcoin()
+    time.sleep(1.1)
+    nikkei = fetch_nikkei()
 
     return {
         "SP500": sp500,
@@ -184,6 +202,8 @@ def fetch_market_indicators() -> dict:
         "VIX": vix,
         "US10Y": us10y,
         "BRENT": brent,
+        "BITCOIN": bitcoin,
+        "NIKKEI": nikkei,
     }
 
 
@@ -333,7 +353,7 @@ def build_prompt(fx_rates: dict, indicators: dict, headlines: dict, calendar: di
 
     return f"""
 You are a senior FX analyst at Privalgo, an EMI specialising in FX risk management 
-and international payment rails for corporate clients. Write a concise morning briefing 
+and international payment rails for corporate clients. Write a substantive morning briefing 
 for colleagues in trading, relationship management, and client-facing roles.
 
 Use ONLY the data provided below. Do not invent numbers, events, causal explanations, 
@@ -353,6 +373,8 @@ Gold spot: {indicators['GOLD']}
 VIX: {indicators['VIX']['value']} (date: {indicators['VIX']['date']})
 US 10Y yield: {indicators['US10Y']['value']} (date: {indicators['US10Y']['date']})
 Brent spot: {indicators['BRENT']['value']} (date: {indicators['BRENT']['date']})
+Bitcoin (BTC/USD): {indicators['BITCOIN']}
+Nikkei 225: {indicators['NIKKEI']}
 
 ECONOMIC CALENDAR:
 {econ_lines}
@@ -364,21 +386,31 @@ HEADLINES:
 {headline_text}
 
 FIELD DEFINITIONS:
-- key_market: The single most important macro or market development. Lead with a number.
-- fx: EUR/USD, EUR/GBP, EUR/CHF — direction, magnitude, likely driver. Flag notable levels.
+- key_market: The single most important macro or market development. Lead with a number. 
+  Provide context: what level is this relative to recent history, and why does it matter 
+  for corporate FX clients?
+- fx: EUR/USD, EUR/GBP, EUR/CHF — direction, magnitude, likely driver. Flag notable levels. 
+  Comment on whether current levels represent a hedging opportunity or risk for corporates 
+  with EUR exposure.
 - central_banks: Relevant central bank signals or rate expectations from the data/headlines. 
+  Connect rate expectations to FX implications where the data supports it. 
   If nothing relevant: "No major central bank signals today."
 - macro_watch: Today's scheduled releases — what is expected and why it matters. 
-  If calendar is empty: "No major scheduled releases today — markets may trade on technicals."
+  Reference the upcoming calendar events and explain their relevance to EUR pairs and 
+  corporate payment flows. If calendar is empty: "No major scheduled releases today — 
+  markets may trade on technicals."
 - impact: Name a specific corporate use-case affected by today's conditions (hedging timing, 
-  invoice currency exposure, cash repatriation, etc.). Not a generic observation.
+  invoice currency exposure, cash repatriation, etc.). Be concrete: reference actual rate 
+  levels and what action that implies.
 - client_talking_point: One practical, grounded observation a relationship manager could 
-  use in a client call today. Commercially useful, not pushy.
+  use in a client call today. Commercially useful, not pushy. Should feel like something 
+  a trusted advisor would say — not a generic market comment.
 
 RULES:
 - Return valid JSON only. No preamble, no markdown. First character must be {{.
 - Both "en" and "nl" fields are required.
-- Each field: maximum 2 sentences.
+- Each field: 3–5 sentences. Be substantive and specific — reference the actual data 
+  values provided. Avoid vague generalisations.
 - Dutch must be a natural rewrite using standard financial terminology 
   (wisselkoers, renteverwachtingen, valutarisico), not a literal translation.
 - Refer to actual indicator values where relevant.
@@ -416,21 +448,19 @@ def strip_code_fences(text: str) -> str:
 def generate_market_update(fx_rates: dict, indicators: dict, headlines: dict, calendar: dict) -> dict:
     prompt = build_prompt(fx_rates, indicators, headlines, calendar)
 
-    response = client.chat.completions.create(
-        model="gpt-4o",  # gpt-5 does not exist; use gpt-4o (or gpt-4o-mini for lower cost)
+    response = anthropic_client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=4096,
+        system="You write precise, substantive market briefings for corporate FX clients and return strict JSON only. No preamble, no markdown fences.",
         messages=[
             {
-                "role": "system",
-                "content": "You write precise market briefings and return strict JSON only."
-            },
-            {
                 "role": "user",
-                "content": prompt
+                "content": prompt,
             }
         ],
     )
 
-    content = strip_code_fences(response.choices[0].message.content)
+    content = strip_code_fences(response.content[0].text)
     return json.loads(content)
 
 
@@ -462,6 +492,8 @@ def fill_template(template: str, fx_rates: dict, indicators: dict, market_update
         "{{VIX}}": f"{indicators['VIX']['value']}",
         "{{US10Y}}": f"{indicators['US10Y']['value']}",
         "{{BRENT}}": f"{indicators['BRENT']['value']}",
+        "{{BITCOIN}}": f"{indicators['BITCOIN']:,.0f}",
+        "{{NIKKEI}}": f"{indicators['NIKKEI']:,.0f}",
 
         "{{EN_KEY_MARKET}}": market_update["en"]["key_market"],
         "{{EN_FX}}": market_update["en"]["fx"],
