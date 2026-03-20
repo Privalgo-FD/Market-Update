@@ -96,6 +96,8 @@ def fetch_alpha_vantage_fx() -> dict:
         "EURUSD": ("EUR", "USD"),
         "EURGBP": ("EUR", "GBP"),
         "EURCHF": ("EUR", "CHF"),
+        "EURJPY": ("EUR", "JPY"),
+        "USDJPY": ("USD", "JPY"),
     }
 
     results = {}
@@ -366,6 +368,8 @@ FX SNAPSHOT:
 EUR/USD: {fx_rates['EURUSD']}
 EUR/GBP: {fx_rates['EURGBP']}
 EUR/CHF: {fx_rates['EURCHF']}
+EUR/JPY: {fx_rates['EURJPY']}
+USD/JPY: {fx_rates['USDJPY']}
 
 MARKET INDICATORS:
 S&P 500: {indicators['SP500']['value']} (date: {indicators['SP500']['date']})
@@ -486,6 +490,8 @@ def fill_template(template: str, fx_rates: dict, indicators: dict, market_update
         "{{EURUSD}}": fx_rates["EURUSD"],
         "{{EURGBP}}": fx_rates["EURGBP"],
         "{{EURCHF}}": fx_rates["EURCHF"],
+        "{{EURJPY}}": fx_rates["EURJPY"],
+        "{{USDJPY}}": fx_rates["USDJPY"],
 
         "{{SP500}}": f"{indicators['SP500']['value']}",
         "{{GOLD}}": f"{indicators['GOLD']}",
