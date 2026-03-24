@@ -184,14 +184,26 @@ def fetch_fred_latest(series_id: str) -> dict:
     raise ValueError(f"No usable FRED data for {series_id}")
 
 
+def fetch_us10y() -> float:
+    """US 10Y Treasury yield via yfinance ^TNX (real-time during market hours)."""
+    return fetch_yfinance_price("^TNX")
+
+
+def fetch_brent() -> float:
+    """Brent crude front-month futures via yfinance BZ=F (continuously traded)."""
+    return fetch_yfinance_price("BZ=F")
+
+
 def fetch_market_indicators() -> dict:
     sp500 = fetch_fred_latest("SP500")
     gold = fetch_gold_spot()
     time.sleep(1.1)
 
     vix = fetch_fred_latest("VIXCLS")
-    us10y = fetch_fred_latest("DGS10")
-    brent = fetch_fred_latest("DCOILBRENTEU")
+    us10y = fetch_us10y()
+    time.sleep(1.1)
+
+    brent = fetch_brent()
     time.sleep(1.1)
 
     bitcoin = fetch_bitcoin()
@@ -375,8 +387,8 @@ MARKET INDICATORS:
 S&P 500: {indicators['SP500']['value']} (date: {indicators['SP500']['date']})
 Gold spot: {indicators['GOLD']}
 VIX: {indicators['VIX']['value']} (date: {indicators['VIX']['date']})
-US 10Y yield: {indicators['US10Y']['value']} (date: {indicators['US10Y']['date']})
-Brent spot: {indicators['BRENT']['value']} (date: {indicators['BRENT']['date']})
+US 10Y yield: {indicators['US10Y']}
+Brent spot: {indicators['BRENT']}
 Bitcoin (BTC/USD): {indicators['BITCOIN']}
 Nikkei 225: {indicators['NIKKEI']}
 
@@ -496,8 +508,8 @@ def fill_template(template: str, fx_rates: dict, indicators: dict, market_update
         "{{SP500}}": f"{indicators['SP500']['value']}",
         "{{GOLD}}": f"{indicators['GOLD']}",
         "{{VIX}}": f"{indicators['VIX']['value']}",
-        "{{US10Y}}": f"{indicators['US10Y']['value']}",
-        "{{BRENT}}": f"{indicators['BRENT']['value']}",
+        "{{US10Y}}": f"{indicators['US10Y']}",
+        "{{BRENT}}": f"{indicators['BRENT']}",
         "{{BITCOIN}}": f"{indicators['BITCOIN']:,.0f}",
         "{{NIKKEI}}": f"{indicators['NIKKEI']:,.0f}",
 
