@@ -348,7 +348,17 @@ def format_event_line(event: dict) -> str:
     return f"{event['label']} ({event['reference_period']}): {et_str} / {cet_str}"
 
 
+def fallback_calendar() -> dict:
+    """Returns a minimal calendar structure used when the BLS feed is unavailable."""
+    return {
+        "events": [],
+        "market_mover": None,
+    }
+
+
 def build_econ_calendar_html(calendar: dict) -> str:
+    if not calendar["events"]:
+        return "Economic calendar temporarily unavailable."
     lines = []
     for event in calendar["events"]:
         lines.append(f"• {format_event_line(event)}")
@@ -356,6 +366,8 @@ def build_econ_calendar_html(calendar: dict) -> str:
 
 
 def build_market_mover_text(calendar: dict) -> str:
+    if not calendar["market_mover"]:
+        return "Next market mover data temporarily unavailable."
     mover = calendar["market_mover"]
     return f"Next key scheduled mover: {format_event_line(mover)}"
 
@@ -563,7 +575,13 @@ def main():
     fx_rates = fetch_alpha_vantage_fx()
     indicators = fetch_market_indicators()
     headlines = fetch_headlines()
-    calendar = fetch_economic_calendar()
+
+    try:
+        calendar = fetch_economic_calendar()
+    except Exception as e:
+        print(f"Warning: economic calendar fetch failed ({e}). Proceeding with fallback.")
+        calendar = fallback_calendar()
+
     market_update = generate_market_update(fx_rates, indicators, headlines, calendar)
     template = load_template()
     html_body = fill_template(template, fx_rates, indicators, market_update, calendar)
