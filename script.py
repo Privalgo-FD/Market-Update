@@ -28,7 +28,6 @@ FED_RSS = "https://www.federalreserve.gov/feeds/press_monetary.xml"
 REUTERS_BUSINESS_RSS = "https://feeds.reuters.com/reuters/businessNews"
 REUTERS_WEALTH_RSS = "https://feeds.reuters.com/news/wealth"
 
-BLS_ICS_URL = "https://www.bls.gov/schedule/news_release/bls.ics"
 
 SMTP_SERVER = os.environ["SMTP_SERVER"]
 SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
@@ -52,43 +51,6 @@ def safe_get_json(url: str, params: dict | None = None) -> dict:
     response.raise_for_status()
     return response.json()
 
-
-def safe_get_ics(url: str, retries: int = 3, backoff: float = 2.0) -> str:
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Safari/537.36"
-        ),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Connection": "keep-alive",
-        "Referer": "https://www.bls.gov/",
-    }
-
-    session = requests.Session()
-    session.headers.update(headers)
-
-    try:
-        session.get("https://www.bls.gov/", timeout=15)
-        time.sleep(1.5)
-    except Exception:
-        pass
-
-    last_exc = None
-    for attempt in range(retries):
-        try:
-            response = session.get(url, timeout=25)
-            response.raise_for_status()
-            return response.text
-        except requests.exceptions.HTTPError as e:
-            last_exc = e
-            if response.status_code == 403:
-                time.sleep(backoff * (attempt + 1))
-            else:
-                raise
-    raise last_exc
 
 
 def fetch_alpha_vantage_fx() -> dict:
@@ -263,72 +225,67 @@ def flatten_headlines(headlines: dict) -> str:
     return "\n".join(lines)
 
 
-def parse_ics_datetime(dt_raw: str) -> datetime | None:
-    dt_clean = dt_raw.strip().replace("Z", "")
-
-    for fmt in ("%Y%m%dT%H%M%S", "%Y%m%dT%H%M", "%Y%m%d"):
-        try:
-            dt = datetime.strptime(dt_clean, fmt)
-            return dt.replace(tzinfo=ET)
-        except ValueError:
-            continue
-    return None
-
-
 def fetch_economic_calendar() -> dict:
-    ics_text = safe_get_ics(BLS_ICS_URL)
-    now_et = datetime.now(ET)
-
-    target_map = {
-        "Consumer Price Index": "US CPI",
-        "Producer Price Index": "US PPI",
-        "Employment Situation": "US Employment Situation (NFP / Unemployment)",
+    """
+    Fetches upcoming US macro releases from the FRED release calendar API.
+    Targets CPI, PPI and Employment Situation (NFP) — same three events as before,
+    but sourced from FRED instead of the BLS ICS feed which blocks GitHub Actions.
+    """
+    # FRED release IDs for our three target events
+    target_releases = {
+        10: "US CPI",                                      # Consumer Price Index
+        11: "US PPI",                                      # Producer Price Index
+        50: "US Employment Situation (NFP / Unemployment)", # Employment Situation
     }
 
+    now_cet = datetime.now(CET)
+    # Look ahead 60 days to ensure we always find upcoming dates
+    date_from = now_cet.strftime("%Y-%m-%d")
+    date_to = (now_cet.replace(month=now_cet.month + 2) if now_cet.month <= 10
+               else now_cet.replace(year=now_cet.year + 1, month=now_cet.month - 10)
+               ).strftime("%Y-%m-%d")
+
     events = []
-    blocks = ics_text.split("BEGIN:VEVENT")
 
-    for block in blocks:
-        if "SUMMARY:" not in block or "DTSTART" not in block:
-            continue
-
-        summary_match = re.search(r"SUMMARY:(.+)", block)
-        dtstart_match = re.search(r"DTSTART(?:;[^:]+)?:([0-9T]+Z?)", block)
-
-        if not summary_match or not dtstart_match:
-            continue
-
-        summary = summary_match.group(1).strip()
-        dt_raw = dtstart_match.group(1).strip()
-
-        matched_label = None
-        for title, label in target_map.items():
-            if summary.startswith(title):
-                matched_label = label
-                break
-
-        if not matched_label:
-            continue
-
-        dt = parse_ics_datetime(dt_raw)
-        if not dt or dt < now_et:
-            continue
-
-        reference_period = "upcoming release"
-        m = re.search(r"for (.+)$", summary)
-        if m:
-            reference_period = m.group(1).strip()
-
-        events.append(
-            {
-                "label": matched_label,
-                "reference_period": reference_period,
-                "release_et": dt,
-            }
+    for release_id, label in target_releases.items():
+        data = safe_get_json(
+            "https://api.stlouisfed.org/fred/release/dates",
+            params={
+                "release_id": release_id,
+                "api_key": FRED_API_KEY,
+                "file_type": "json",
+                "realtime_start": date_from,
+                "realtime_end": date_to,
+                "sort_order": "asc",
+                "limit": 3,
+            },
         )
 
+        release_dates = data.get("release_dates", [])
+        for entry in release_dates:
+            date_str = entry.get("date")
+            if not date_str:
+                continue
+
+            # FRED release dates are date-only; releases typically at 08:30 ET
+            dt_et = datetime.strptime(date_str, "%Y-%m-%d").replace(
+                hour=8, minute=30, tzinfo=ET
+            )
+
+            if dt_et < datetime.now(ET):
+                continue
+
+            events.append({
+                "label": label,
+                "reference_period": "upcoming release",
+                "release_et": dt_et,
+            })
+            break  # Only take the next upcoming date per release
+
+        time.sleep(0.5)  # Be polite to FRED API
+
     if not events:
-        raise ValueError("No upcoming CPI/PPI/Employment Situation releases found in BLS ICS feed")
+        raise ValueError("No upcoming events found in FRED release calendar")
 
     events_sorted = sorted(events, key=lambda x: x["release_et"])
 
@@ -336,6 +293,7 @@ def fetch_economic_calendar() -> dict:
         "events": events_sorted[:3],
         "market_mover": events_sorted[0],
     }
+
 
 
 def format_event_line(event: dict) -> str:
