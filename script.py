@@ -4,7 +4,7 @@ import ssl
 import json
 import time
 import smtplib
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -239,11 +239,8 @@ def fetch_economic_calendar() -> dict:
     }
 
     now_cet = datetime.now(CET)
-    # Look ahead 60 days to ensure we always find upcoming dates
     date_from = now_cet.strftime("%Y-%m-%d")
-    date_to = (now_cet.replace(month=now_cet.month + 2) if now_cet.month <= 10
-               else now_cet.replace(year=now_cet.year + 1, month=now_cet.month - 10)
-               ).strftime("%Y-%m-%d")
+    date_to = (now_cet + timedelta(days=90)).strftime("%Y-%m-%d")
 
     events = []
 
