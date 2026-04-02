@@ -228,19 +228,19 @@ def flatten_headlines(headlines: dict) -> str:
 def fetch_economic_calendar() -> dict:
     """
     Fetches upcoming US macro releases from the FRED release calendar API.
-    Targets CPI, PPI and Employment Situation (NFP) — same three events as before,
-    but sourced from FRED instead of the BLS ICS feed which blocks GitHub Actions.
+    Targets CPI, PPI and Employment Situation (NFP).
+    Uses include_release_dates_with_no_data=true to retrieve scheduled
+    future dates which have not yet been published.
     """
-    # FRED release IDs for our three target events
     target_releases = {
-        10: "US CPI",                                      # Consumer Price Index
-        11: "US PPI",                                      # Producer Price Index
-        50: "US Employment Situation (NFP / Unemployment)", # Employment Situation
+        10: "US CPI",
+        52: "US PPI",
+        50: "US Employment Situation (NFP / Unemployment)",
     }
 
-    now_cet = datetime.now(CET)
-    date_from = now_cet.strftime("%Y-%m-%d")
-    date_to = (now_cet + timedelta(days=90)).strftime("%Y-%m-%d")
+    now_et = datetime.now(ET)
+    date_from = now_et.strftime("%Y-%m-%d")
+    date_to = (now_et + timedelta(days=90)).strftime("%Y-%m-%d")
 
     events = []
 
@@ -253,8 +253,9 @@ def fetch_economic_calendar() -> dict:
                 "file_type": "json",
                 "realtime_start": date_from,
                 "realtime_end": date_to,
+                "include_release_dates_with_no_data": "true",
                 "sort_order": "asc",
-                "limit": 3,
+                "limit": 5,
             },
         )
 
@@ -264,12 +265,12 @@ def fetch_economic_calendar() -> dict:
             if not date_str:
                 continue
 
-            # FRED release dates are date-only; releases typically at 08:30 ET
+            # FRED dates are date-only; BLS releases at 08:30 ET
             dt_et = datetime.strptime(date_str, "%Y-%m-%d").replace(
                 hour=8, minute=30, tzinfo=ET
             )
 
-            if dt_et < datetime.now(ET):
+            if dt_et < now_et:
                 continue
 
             events.append({
@@ -279,7 +280,7 @@ def fetch_economic_calendar() -> dict:
             })
             break  # Only take the next upcoming date per release
 
-        time.sleep(0.5)  # Be polite to FRED API
+        time.sleep(0.5)
 
     if not events:
         raise ValueError("No upcoming events found in FRED release calendar")
