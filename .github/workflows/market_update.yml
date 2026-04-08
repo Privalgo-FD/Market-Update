@@ -1,7 +1,7 @@
 name: Privalgo Market Update
 on:
   schedule:
-    - cron: "0 6 * * 1-5"
+    - cron: "0 5 * * 1-5"
   workflow_dispatch:
 jobs:
   send-market-update:
