@@ -432,20 +432,33 @@ def strip_code_fences(text: str) -> str:
 def generate_market_update(fx_rates: dict, indicators: dict, headlines: dict, calendar: dict) -> dict:
     prompt = build_prompt(fx_rates, indicators, headlines, calendar)
 
-    response = anthropic_client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=4096,
-        system="You write precise, substantive market briefings for corporate FX clients and return strict JSON only. No preamble, no markdown fences.",
-        messages=[
-            {
-                "role": "user",
-                "content": prompt,
-            }
-        ],
-    )
+    max_retries = 4
+    backoff_seconds = [10, 20, 40, 60]
 
-    content = strip_code_fences(response.content[0].text)
-    return json.loads(content)
+    for attempt, wait in enumerate(backoff_seconds, start=1):
+        try:
+            response = anthropic_client.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=4096,
+                system="You write precise, substantive market briefings for corporate FX clients and return strict JSON only. No preamble, no markdown fences.",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": prompt,
+                    }
+                ],
+            )
+            content = strip_code_fences(response.content[0].text)
+            return json.loads(content)
+
+        except anthropic.APIStatusError as e:
+            if e.status_code == 529 and attempt < max_retries:
+                print(f"Anthropic API overloaded (529). Retrying in {wait}s (attempt {attempt}/{max_retries})...")
+                time.sleep(wait)
+            else:
+                raise
+
+    raise RuntimeError("Anthropic API remained overloaded after all retry attempts.")
 
 
 def load_template(path: str = "email_template.html") -> str:
