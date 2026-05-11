@@ -1,20 +1,32 @@
 name: Privalgo Market Update
+
 on:
   schedule:
-    - cron: "0 5 * * 1-5"
+    # GitHub Actions uses UTC.
+    # Running on an odd minute reduces the chance of queue delays.
+    - cron: "41 5 * * 1-5"
   workflow_dispatch:
+
 jobs:
   send-market-update:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: "pip"
+
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
       - name: Run market update script
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
