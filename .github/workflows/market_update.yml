@@ -4,7 +4,7 @@ on:
   schedule:
     # GitHub Actions uses UTC.
     # Running on an odd minute reduces the chance of queue delays.
-    - cron: "41 5 * * 1-5"
+    - cron: "27 4 * * 1-5"
   workflow_dispatch:
 
 jobs:
