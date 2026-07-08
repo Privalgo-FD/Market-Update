@@ -22,7 +22,7 @@ RECIPIENTS = [
     "alogean@privalgo.eu",
     "b.veenbrink@stadiumconsultancy.com",
     "plucassen@privalgo.eu",
-    "foh@privalgo.co.uk",
+    "sales@privalgo.co.uk",
     "whendriks@privalgo.co.uk",
 ]
 
