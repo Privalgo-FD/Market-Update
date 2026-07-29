@@ -31,6 +31,15 @@ FED_RSS = "https://www.federalreserve.gov/feeds/press_monetary.xml"
 REUTERS_BUSINESS_RSS = "https://feeds.reuters.com/reuters/businessNews"
 REUTERS_WEALTH_RSS = "https://feeds.reuters.com/news/wealth"
 
+# Forex Factory economic calendar (served by FairEconomy Media as structured JSON).
+# The public website blocks automated access; these weekly feeds are the supported route.
+# Rate limit: max 2 downloads per 5 minutes across all file types.
+FF_THISWEEK_JSON = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
+FF_NEXTWEEK_JSON = "https://nfs.faireconomy.media/ff_calendar_nextweek.json"
+
+# Only surface events for the currencies Privalgo actually runs risk on.
+RELEVANT_CURRENCIES = {"USD", "EUR", "GBP", "CHF", "JPY"}
+
 
 SMTP_SERVER = os.environ["SMTP_SERVER"]
 SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
@@ -228,12 +237,168 @@ def flatten_headlines(headlines: dict) -> str:
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------------
+# Economic calendar
+#
+# Primary source: Forex Factory (via FairEconomy Media JSON feed). This gives
+# high-impact macro releases and central bank activity across all of Privalgo's
+# currencies, which is the material the readership actually wants.
+# Fallback source: FRED release calendar (US only), used if Forex Factory is
+# unavailable or rate-limited.
+# ---------------------------------------------------------------------------
+
+# Substrings (lower-case) that identify a central bank event in a Forex Factory title.
+CENTRAL_BANK_KEYWORDS = (
+    "fomc", "federal funds rate", "fed chair", "fed monetary", "beige book",
+    "ecb", "main refinancing rate", "deposit facility rate", "lagarde",
+    "monetary policy statement", "monetary policy summary", "monetary policy report",
+    "monetary policy meeting accounts", "rate statement", "press conference",
+    "official bank rate", "bank rate", "mpc official", "mpc member", "gov bailey",
+    "snb", "snb policy rate", "snb chairman",
+    "boj", "boj policy rate", "boj outlook", "boj press",
+    "rate decision", "policy rate", "interest rate", "rate vote",
+)
+
+# Titles of central bank speakers whose "Speaks" events should count as CB activity.
+CENTRAL_BANK_SPEAKERS = (
+    "fed ", "fomc", "ecb", "boe", "boj", "snb",
+    "gov ", "governor", "president", "chair", "mpc",
+)
+
+
+def is_central_bank_event(title: str) -> bool:
+    t = (title or "").lower()
+    if any(keyword in t for keyword in CENTRAL_BANK_KEYWORDS):
+        return True
+    if "speaks" in t and any(speaker in t for speaker in CENTRAL_BANK_SPEAKERS):
+        return True
+    return False
+
+
+def fetch_ff_json(url: str) -> list:
+    """
+    Fetch a Forex Factory weekly calendar feed.
+    When rate-limited or blocked, the endpoint returns an HTML page rather than
+    JSON. We detect that and raise, so the caller can fall back cleanly.
+    """
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; PrivalgoMarketUpdate/1.0)",
+        "Accept": "application/json",
+    }
+    response = requests.get(url, headers=headers, timeout=25)
+    response.raise_for_status()
+
+    text = response.text.strip()
+    if not text or text[0] not in "[{" or "Request Denied" in text:
+        raise RuntimeError("Forex Factory returned a block/rate-limit page instead of JSON")
+
+    data = json.loads(text)
+    if not isinstance(data, list):
+        raise RuntimeError("Unexpected Forex Factory payload (not a list)")
+    return data
+
+
+def parse_ff_events(raw: list) -> list[dict]:
+    """Convert raw Forex Factory rows into the unified event shape, filtered to
+    Privalgo's relevant currencies."""
+    events = []
+    for item in raw:
+        currency = (item.get("country") or "").upper()
+        if currency not in RELEVANT_CURRENCIES:
+            continue
+
+        date_str = item.get("date")
+        if not date_str:
+            continue
+        try:
+            # ISO 8601 with an embedded ET offset, e.g. 2026-07-29T14:00:00-04:00
+            release_dt = datetime.fromisoformat(date_str)
+        except ValueError:
+            continue
+
+        title = (item.get("title") or "").strip()
+        events.append(
+            {
+                "label": title,
+                "currency": currency,
+                "impact": (item.get("impact") or "").strip() or "Low",
+                "forecast": (item.get("forecast") or "").strip(),
+                "previous": (item.get("previous") or "").strip(),
+                "release_et": release_dt.astimezone(ET),
+                "is_central_bank": is_central_bank_event(title),
+                "reference_period": "",
+            }
+        )
+    return events
+
+
+def build_calendar_from_events(events: list[dict], source: str) -> dict:
+    """Bucket a flat list of unified events into the structure the rest of the
+    pipeline consumes."""
+    now_cet = datetime.now(CET)
+    today_cet = now_cet.date()
+
+    events_sorted = sorted(events, key=lambda e: e["release_et"])
+
+    def cet_date(event):
+        return event["release_et"].astimezone(CET).date()
+
+    today = [e for e in events_sorted if cet_date(e) == today_cet]
+
+    upcoming = [e for e in events_sorted if e["release_et"] >= now_cet]
+    high_impact_upcoming = [e for e in upcoming if e["impact"].lower() == "high"][:8]
+
+    central_banks = [
+        e for e in events_sorted
+        if e["is_central_bank"] and cet_date(e) >= today_cet
+    ][:8]
+
+    # Primary list used for the template and prompt: today's events if any,
+    # otherwise the next high-impact events.
+    primary = today if today else high_impact_upcoming[:5]
+
+    # Market mover: soonest upcoming high-impact event, then soonest CB event,
+    # then simply the next event.
+    market_mover = next((e for e in upcoming if e["impact"].lower() == "high"), None)
+    if market_mover is None:
+        market_mover = next((e for e in upcoming if e["is_central_bank"]), None)
+    if market_mover is None and upcoming:
+        market_mover = upcoming[0]
+
+    return {
+        "events": primary[:8],
+        "today": today,
+        "high_impact_upcoming": high_impact_upcoming,
+        "central_banks": central_banks,
+        "market_mover": market_mover,
+        "source": source,
+    }
+
+
+def fetch_forexfactory_calendar() -> dict:
+    """Primary calendar source. Always pulls the current week; adds next week
+    only late in the week so there is still forward visibility, while staying
+    within the 2-requests-per-5-minutes limit."""
+    raw = fetch_ff_json(FF_THISWEEK_JSON)
+
+    # Thursday (3) or Friday (4): pull next week too for lookahead. Best-effort.
+    if datetime.now(CET).weekday() >= 3:
+        try:
+            raw = raw + fetch_ff_json(FF_NEXTWEEK_JSON)
+        except Exception as e:
+            print(f"Note: Forex Factory next-week feed unavailable ({e}). Using this week only.")
+
+    events = parse_ff_events(raw)
+    if not events:
+        raise ValueError("No relevant Forex Factory events after filtering")
+
+    return build_calendar_from_events(events, source="Forex Factory")
+
+
 def fetch_economic_calendar() -> dict:
     """
-    Fetches upcoming US macro releases from the FRED release calendar API.
-    Targets CPI, PPI and Employment Situation (NFP).
-    Uses include_release_dates_with_no_data=true to retrieve scheduled
-    future dates which have not yet been published.
+    Fallback source. Upcoming US macro releases from the FRED release calendar
+    API (CPI, PPI, Employment Situation), mapped into the unified event shape.
     """
     target_releases = {
         10: "US CPI",
@@ -278,8 +443,13 @@ def fetch_economic_calendar() -> dict:
 
             events.append({
                 "label": label,
-                "reference_period": "upcoming release",
+                "currency": "USD",
+                "impact": "High",
+                "forecast": "",
+                "previous": "",
                 "release_et": dt_et,
+                "is_central_bank": is_central_bank_event(label),
+                "reference_period": "upcoming release",
             })
             break  # Only take the next upcoming date per release
 
@@ -288,119 +458,163 @@ def fetch_economic_calendar() -> dict:
     if not events:
         raise ValueError("No upcoming events found in FRED release calendar")
 
-    events_sorted = sorted(events, key=lambda x: x["release_et"])
-
-    return {
-        "events": events_sorted[:3],
-        "market_mover": events_sorted[0],
-    }
-
+    return build_calendar_from_events(events, source="FRED (fallback)")
 
 
 def format_event_line(event: dict) -> str:
-    dt_et = event["release_et"]
-    dt_cet = dt_et.astimezone(CET)
+    dt_cet = event["release_et"].astimezone(CET)
+    dt_et = event["release_et"].astimezone(ET)
 
-    et_str = dt_et.strftime("%d %b %Y, %H:%M ET")
-    cet_str = dt_cet.strftime("%d %b %Y, %H:%M CET")
+    cet_str = dt_cet.strftime("%a %d %b, %H:%M CET")
+    et_str = dt_et.strftime("%H:%M ET")
 
-    return f"{event['label']} ({event['reference_period']}): {et_str} / {cet_str}"
+    currency = event.get("currency", "")
+    impact = event.get("impact", "")
+    tag = f" ({currency}, {impact})" if currency else ""
+
+    forecast = event.get("forecast", "")
+    previous = event.get("previous", "")
+    figures = ""
+    if forecast or previous:
+        figures = f" [fc {forecast or 'n/a'} / prev {previous or 'n/a'}]"
+
+    return f"{event['label']}{tag}{figures}: {cet_str} / {et_str}"
 
 
 def fallback_calendar() -> dict:
-    """Returns a minimal calendar structure used when the BLS feed is unavailable."""
+    """Minimal calendar structure used when every calendar source is unavailable."""
     return {
         "events": [],
+        "today": [],
+        "high_impact_upcoming": [],
+        "central_banks": [],
         "market_mover": None,
+        "source": "unavailable",
     }
 
 
 def build_econ_calendar_html(calendar: dict) -> str:
-    if not calendar["events"]:
-        return "Economic calendar temporarily unavailable."
-    lines = []
-    for event in calendar["events"]:
-        lines.append(f"• {format_event_line(event)}")
-    return "<br>".join(lines)
+    today = calendar.get("today") or []
+    central_banks = calendar.get("central_banks") or []
+    sections = []
+
+    if today:
+        rows = "<br>".join(f"&bull; {format_event_line(e)}" for e in today)
+        sections.append(f"<strong>Today's scheduled releases</strong><br>{rows}")
+    else:
+        upcoming = calendar.get("high_impact_upcoming") or calendar.get("events") or []
+        if upcoming:
+            rows = "<br>".join(f"&bull; {format_event_line(e)}" for e in upcoming[:5])
+            sections.append(
+                f"<strong>No major releases today. Next high-impact events</strong><br>{rows}"
+            )
+        else:
+            sections.append("Economic calendar temporarily unavailable.")
+
+    if central_banks:
+        rows = "<br>".join(f"&bull; {format_event_line(e)}" for e in central_banks)
+        sections.append(f"<strong>Central bank focus (this week)</strong><br>{rows}")
+
+    return "<br><br>".join(sections)
 
 
 def build_market_mover_text(calendar: dict) -> str:
-    if not calendar["market_mover"]:
+    mover = calendar.get("market_mover")
+    if not mover:
         return "Next market mover data temporarily unavailable."
-    mover = calendar["market_mover"]
     return f"Next key scheduled mover: {format_event_line(mover)}"
 
 
 def build_prompt(fx_rates: dict, indicators: dict, headlines: dict, calendar: dict) -> str:
     headline_text = flatten_headlines(headlines)
     generated_at = datetime.now(CET).strftime("%Y-%m-%d %H:%M CET")
-    econ_lines = "\n".join([f"- {format_event_line(e)}" for e in calendar["events"]])
+
+    def fmt_list(events):
+        lines = [f"- {format_event_line(e)}" for e in (events or [])]
+        return "\n".join(lines) if lines else "- None scheduled"
+
+    today_lines = fmt_list(calendar.get("today"))
+    cb_lines = fmt_list(calendar.get("central_banks"))
+    hi_lines = fmt_list(calendar.get("high_impact_upcoming"))
+    source = calendar.get("source", "unknown")
 
     return f"""
-You are a senior FX analyst at Privalgo, an EMI specialising in FX risk management 
-and international payment rails for corporate clients. Write a substantive morning briefing 
-for colleagues in trading, relationship management, and client-facing roles.
+You are a senior FX and macro strategist at Privalgo, an EMI specialising in FX risk
+management and international payment rails for corporate clients. Write a substantive
+morning briefing for colleagues in trading, relationship management, and client-facing roles.
 
-Use ONLY the data provided below. Do not invent numbers, events, causal explanations, 
-or market narratives. If the data does not explain a move, describe the observation 
-only — do not speculate on the cause.
+Use ONLY the data provided below. Do not invent numbers, events, causal explanations,
+or market narratives. If the data does not explain a move, describe the observation only.
+
+EDITORIAL PRIORITY (important):
+This briefing is about MACRO-ECONOMIC EVENTS and CENTRAL BANK ACTIVITY first. Lead with
+scheduled data releases and central bank actions. Commodity, crypto and equity-index levels
+(gold, Brent, Bitcoin, Nikkei) are SECONDARY CONTEXT only. Do NOT open the briefing with
+where gold is trading. Only mention gold if it is genuinely relevant to the day's macro story.
 
 DATA TIMESTAMP: {generated_at}
+CALENDAR SOURCE: {source}
 
-FX SNAPSHOT:
+FX SNAPSHOT (core):
 EUR/USD: {fx_rates['EURUSD']}
 EUR/GBP: {fx_rates['EURGBP']}
 EUR/CHF: {fx_rates['EURCHF']}
 EUR/JPY: {fx_rates['EURJPY']}
 USD/JPY: {fx_rates['USDJPY']}
 
-MARKET INDICATORS:
+TODAY'S SCHEDULED MACRO RELEASES (Forex Factory calendar, times shown CET / ET):
+{today_lines}
+
+CENTRAL BANK ACTIVITY THIS WEEK (rate decisions, statements, press conferences, official speeches):
+{cb_lines}
+
+HIGH-IMPACT EVENTS AHEAD:
+{hi_lines}
+
+RATES AND RISK CONTEXT:
 S&P 500: {indicators['SP500']['value']} (date: {indicators['SP500']['date']})
-Gold spot: {indicators['GOLD']}
 VIX: {indicators['VIX']['value']} (date: {indicators['VIX']['date']})
 US 10Y yield: {indicators['US10Y']}
 Brent spot: {indicators['BRENT']}
+
+SECONDARY CONTEXT (do not lead with these):
+Gold spot: {indicators['GOLD']}
 Bitcoin (BTC/USD): {indicators['BITCOIN']}
 Nikkei 225: {indicators['NIKKEI']}
 
-ECONOMIC CALENDAR:
-{econ_lines}
-
-MARKET MOVER:
-{build_market_mover_text(calendar)}
-
-HEADLINES:
+HEADLINES (ECB / Fed / Reuters):
 {headline_text}
 
 FIELD DEFINITIONS:
-- key_market: The single most important macro or market development. Lead with a number. 
-  Provide context: what level is this relative to recent history, and why does it matter 
-  for corporate FX clients?
-- fx: EUR/USD, EUR/GBP, EUR/CHF — direction, magnitude, likely driver. Flag notable levels. 
-  Comment on whether current levels represent a hedging opportunity or risk for corporates 
-  with EUR exposure.
-- central_banks: Relevant central bank signals or rate expectations from the data/headlines. 
-  Connect rate expectations to FX implications where the data supports it. 
-  If nothing relevant: "No major central bank signals today."
-- macro_watch: Today's scheduled releases — what is expected and why it matters. 
-  Reference the upcoming calendar events and explain their relevance to EUR pairs and 
-  corporate payment flows. If calendar is empty: "No major scheduled releases today — 
-  markets may trade on technicals."
-- impact: Name a specific corporate use-case affected by today's conditions (hedging timing, 
-  invoice currency exposure, cash repatriation, etc.). Be concrete: reference actual rate 
-  levels and what action that implies.
-- client_talking_point: One practical, grounded observation a relationship manager could 
-  use in a client call today. Commercially useful, not pushy. Should feel like something 
-  a trusted advisor would say — not a generic market comment.
+- key_market: The single most important MACRO or CENTRAL BANK development for today, drawn from
+  the scheduled releases and central bank activity above. Lead with the event and its forecast
+  vs previous where given. Do NOT lead with gold, oil, crypto or index levels unless there is
+  genuinely no macro or central bank event of note today.
+- central_banks: PRIORITY SECTION. Summarise the central bank events listed and their read-through
+  for EUR, USD, GBP, CHF and JPY. Cover rate decisions, policy statements, press conferences and
+  official speeches. Connect them to rate expectations and FX implications. If none:
+  "No central bank events scheduled in the relevant window."
+- macro_watch: Walk through today's scheduled releases in time order (CET). For each material
+  release, state forecast vs previous where given and why it matters for the relevant currency
+  pair and for corporate payment flows. If nothing is scheduled today, point to the next
+  high-impact events instead.
+- fx: EUR/USD, EUR/GBP, EUR/CHF, EUR/JPY, USD/JPY. Direction and the likely macro driver from the
+  events above. Flag whether current levels represent a hedging opportunity or risk for corporates
+  with EUR exposure. Reference the actual rate levels.
+- impact: A specific corporate use-case affected by today's conditions (hedging timing, invoice
+  currency exposure, cash repatriation). Be concrete: reference actual rate levels and the scheduled
+  events that could move them, and what action that implies.
+- client_talking_point: One practical, grounded observation a relationship manager could use in a
+  client call today, anchored in the day's macro or central bank calendar. Commercially useful,
+  not pushy.
 
 RULES:
 - Return valid JSON only. No preamble, no markdown. First character must be {{.
 - Both "en" and "nl" fields are required.
-- Each field: 3–5 sentences. Be substantive and specific — reference the actual data 
-  values provided. Avoid vague generalisations.
-- Dutch must be a natural rewrite using standard financial terminology 
-  (wisselkoers, renteverwachtingen, valutarisico), not a literal translation.
-- Refer to actual indicator values where relevant.
+- Each field: 3-5 sentences. Be substantive and specific. Reference the actual data values and the
+  scheduled events. Avoid vague generalisations and avoid em dashes.
+- Dutch must be a natural rewrite using standard financial terminology (wisselkoers,
+  renteverwachtingen, valutarisico, rentebesluit), not a literal translation.
 
 Return this structure:
 {{
@@ -549,10 +763,14 @@ def main():
     headlines = fetch_headlines()
 
     try:
-        calendar = fetch_economic_calendar()
+        calendar = fetch_forexfactory_calendar()
     except Exception as e:
-        print(f"Warning: economic calendar fetch failed ({e}). Proceeding with fallback.")
-        calendar = fallback_calendar()
+        print(f"Warning: Forex Factory calendar fetch failed ({e}). Falling back to FRED release calendar.")
+        try:
+            calendar = fetch_economic_calendar()
+        except Exception as e2:
+            print(f"Warning: FRED calendar also failed ({e2}). Proceeding with empty calendar.")
+            calendar = fallback_calendar()
 
     market_update = generate_market_update(fx_rates, indicators, headlines, calendar)
     template = load_template()
@@ -563,3 +781,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
